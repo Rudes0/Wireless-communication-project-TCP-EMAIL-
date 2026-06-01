@@ -1,6 +1,6 @@
 #To Do 
 # - przycisk na zamknięcie konwesrsacji 
-# - wybór email i cała implementacja email
+# - wybór email i cała implementacja email [x]
 # - może zmienić theme jak już będę miał dużo czasu ??? fajnie by było 
 # - zrobić loggi żeby zapisywać w pliku wysyłabne wiadomości czy coś 
 
@@ -10,10 +10,25 @@ import socket
 import threading
 import smtplib
 from email.message import EmailMessage 
+from datetime import datetime
 
 class emailCommunication:
     def __init__(self):
         pass
+
+    def sendEmail(self, userNamem, userPassword,  receiverEmail, messageText):
+        senderEmail = userNamem
+        senderPassword = userPassword
+
+        msg = EmailMessage()
+        msg['Subject'] = f"Messege from {senderEmail}"
+        msg['From'] = senderEmail
+        msg['To'] = receiverEmail
+        msg.set_content(messageText)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(senderEmail, senderPassword)
+            smtp.send_message(msg)
 
 
 class tcpCommunication:
@@ -72,13 +87,12 @@ class tcpCommunication:
         self.onMessage("Connection closed.")
 
 
-
-
 class mainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("Communication application")
         self.tcp = tcpCommunication(self.safeDisplayMessage, self.showError)
+        self.email = emailCommunication()
         self.userName = ""
         self.userPassword = ""
         self.mainFrame = ttk.Frame(root, padding=(3, 3, 6, 6))
@@ -153,20 +167,6 @@ class mainWindow:
         #Start Server Button
         self.serverButton = Button(self.mainFrame, text="Start server on port :5000", command=self.startServer)
         self.serverButton.grid(column=0, row=6, columnspan=3, sticky=W)    
-    
-    def sendEmail(self, receiverEmail, messageText):
-        senderEmail = self.userName
-        senderPassword = self.userPassword
-
-        msg = EmailMessage()
-        msg['Subject'] = f"Messege from {senderEmail}"
-        msg['From'] = senderEmail
-        msg['To'] = receiverEmail
-        msg.set_content(messageText)
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(senderEmail, senderPassword)
-            smtp.send_message(msg)
 
     def setUserName(self, event=None):
         if self.tcp.startServerInfo == True or self.tcp.isConnected:
@@ -181,6 +181,7 @@ class mainWindow:
         else:
             self.setName.config(text="Your Username:")
             self.sendMessage(f"Username set: {self.userName}")
+
     def setUserPassword(self, event=None):
         self.userPassword = self.userPasswordEntry.get().strip()
         if not self.userPassword:
@@ -225,7 +226,8 @@ class mainWindow:
             fullMessage = f"{self.userName}: {message}"
             try:
                 self.tcp.sendMessage(fullMessage)
-                self.sendMessage(f"You: {message}")
+                self.sendMessage(f"{self.userName}: {message}")
+                self.saveToLog("TCP", fullMessage)
                 self.textToSend.delete(0, END)
 
             except Exception as e:
@@ -238,23 +240,27 @@ class mainWindow:
             try:
                 senderEmail = self.userName
                 fullMessage = f"{senderEmail}: {message}"
-                self.sendEmail(receiverEmail, fullMessage)
-                self.sendMessage(f"You by email send message: {message}")
+                self.email.sendEmail(self.userName, self.userPassword, receiverEmail, message)
+                self.sendMessage(f"You sent message: {message}")
+                self.saveToLog("EMAIL", fullMessage)
                 self.textToSend.delete(0, END)
 
             except Exception as e:
                 messagebox.showerror("Email error", str(e))
 
     def safeDisplayMessage(self, message):
+        self.saveToLog("TCP", message)
         self.root.after(0, lambda: self.sendMessage(message))
     
     def showError(self, error, message):
         messagebox.showerror(error, message)
+
     def startServer(self):
         if not self.userName:
             messagebox.showerror("Warning", "Set username first.")
             return
         self.tcp.startServer()
+
     def connectToServer(self):
         address = self.addressEntry.get().strip()
         if not self.userName:
@@ -271,12 +277,16 @@ class mainWindow:
         except Exception as e:
             messagebox.showerror("Connection error", str(e))
 
+    def saveToLog(self, protocol, message):
+        timeNow = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open("message_log.txt", "a", encoding="utf-8") as file:
+            file.write(f"[{timeNow}] [{protocol}] [{message}]\n")
+
     
 def main_fun():
     root = Tk()
     mainWindow(root)
     root.mainloop()
-
 
 if __name__ == '__main__':
     main_fun()
