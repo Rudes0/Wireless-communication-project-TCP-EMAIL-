@@ -88,7 +88,7 @@ class tcpCommunication:
                  break
         self.startServerInfo = False            
         self.isConnected = False
-        self.onMessage("Connection closed.")
+        
     def disconnectFromServer(self):
         try:
             if self.conn:
