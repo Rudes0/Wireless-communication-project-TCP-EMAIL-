@@ -1,8 +1,8 @@
 #To Do 
-# - przycisk na zamknięcie konwesrsacji 
+# - przycisk na zamknięcie konwesrsacji [x]
 # - wybór email i cała implementacja email [x]
 # - może zmienić theme jak już będę miał dużo czasu ??? fajnie by było 
-# - zrobić loggi żeby zapisywać w pliku wysyłabne wiadomości czy coś 
+# - zrobić loggi żeby zapisywać w pliku wysyłabne wiadomości czy coś [x]
 
 from tkinter import *
 from tkinter import ttk, messagebox
@@ -52,7 +52,11 @@ class tcpCommunication:
             self.onShowWarning("Error", "Server is already running or port 5000 is busy.")
 
     def acceptClient(self):
-        self.conn, address = self.sock.accept()
+        try: 
+            self.conn, address = self.sock.accept()
+        except OSError:
+            self.startServerInfo = False
+            return
         self.isConnected = True
         self.onMessage(f"Connected with {address}")
         thread = threading.Thread(target=self.reciveMessage, daemon=True)
@@ -85,7 +89,21 @@ class tcpCommunication:
         self.startServerInfo = False            
         self.isConnected = False
         self.onMessage("Connection closed.")
+    def disconnectFromServer(self):
+        try:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
+            if self.sock:
+                self.sock.close()
+                self.sock = None
+            self.isConnected = False
+            self.startServerInfo = False
 
+            self.onMessage("Disconnected")
+
+        except Exception as e:
+            self.onShowWarning("Disconnect error", str(e))
 
 class mainWindow:
     def __init__(self, root):
@@ -135,6 +153,9 @@ class mainWindow:
         self.connectButton = Button(self.mainFrame, text="Connect", command=self.connectToServer)
         self.connectButton.grid(column=3, row=5, sticky=(W, E))
 
+        #Disconnect Button 
+        self.disconnectButton = Button(self.mainFrame, text="Disconnect", command=self.disconnectFromServer)
+        self.disconnectButton.grid(column=3, row=6, sticky=(W, E))
         #Protocol Entry
         self.addressEntry = Entry(self.mainFrame)
         self.addressEntry.grid(column=0, row=4, columnspan=4, sticky=(W,E))
@@ -276,6 +297,8 @@ class mainWindow:
 
         except Exception as e:
             messagebox.showerror("Connection error", str(e))
+    def disconnectFromServer(self):
+        self.tcp.disconnectFromServer()
 
     def saveToLog(self, protocol, message):
         timeNow = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
