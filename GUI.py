@@ -33,7 +33,7 @@ class tcpCommunication:
         self.conn, address = self.sock.accept()
         self.isConnected = True
         self.onMessage(f"Connected with {address}")
-        thread = threading.Thread(target=self.reciveMessages, daemon=True)
+        thread = threading.Thread(target=self.reciveMessage, daemon=True)
         thread.start()
 
     def connectToServer(self, ip , port):
@@ -41,7 +41,7 @@ class tcpCommunication:
         self.conn.connect((ip, int(port)))
         self.isConnected = True
         self.onMessage(f"Connected to {ip}:{port}") 
-        thread = threading.Thread(target=self.reciveMessages, daemon=True)
+        thread = threading.Thread(target=self.reciveMessage, daemon=True)
         thread.start()
     
     def sendMessage(self, message):
