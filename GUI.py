@@ -8,6 +8,13 @@ from tkinter import *
 from tkinter import ttk, messagebox
 import socket
 import threading
+import smtplib
+from email.message import EmailMessage 
+
+class emailCommunication:
+    def __init__(self):
+        pass
+
 
 class tcpCommunication:
     def __init__(self, onMessage, onShowWarning):
@@ -16,7 +23,7 @@ class tcpCommunication:
         self.isConnected = False
         self.onMessage = onMessage
         self.onShowWarning = onShowWarning
-
+        self.startServerInfo = False
     def startServer(self):
         try:    
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -25,7 +32,7 @@ class tcpCommunication:
             self.onMessage("Server started on port 5000. Waiting for connection...")
             thread = threading.Thread(target=self.acceptClient, daemon=True)
             thread.start()
-
+            self.startServerInfo = True
         except OSError:
             self.onShowWarning("Error", "Server is already running or port 5000 is busy.")
 
@@ -60,7 +67,7 @@ class tcpCommunication:
                 self.onMessage(message)
             except:
                  break
-            
+        self.startServerInfo = False            
         self.isConnected = False
         self.onMessage("Connection closed.")
 
@@ -73,27 +80,33 @@ class mainWindow:
         self.root.title("Communication application")
         self.tcp = tcpCommunication(self.safeDisplayMessage, self.showError)
         self.userName = ""
-
+        self.userPassword = ""
         self.mainFrame = ttk.Frame(root, padding=(3, 3, 6, 6))
         self.mainFrame.grid(column=0, row=0, sticky=(N, W, E, S), columnspan=4, rowspan=8)        
 
         #Info 1 Label
         self.setName = Label(self.mainFrame, text="Insert username")
-        self.setName.grid(column=0, row=0, sticky=W)
+        self.setName.grid(column=0, row=1, sticky=W)
 
         #Pick Username Entry
         self.userName_entry = Entry(self.mainFrame)
-        self.userName_entry.grid(column=0, row=1, columnspan=4, sticky=W)
+        self.userName_entry.grid(column=0, row=2, columnspan=4, sticky=W)
 
-        self.userName_entry.bind("<Return>", self.set_userName)
+        self.userName_entry.bind("<Return>", self.setUserName)
         
+        #Password Label and entry
+        self.setPassword = Label(self.mainFrame, text="Password:")
+        self.userPasswordEntry = Entry(self.mainFrame, show="*")
+
+        self.userPasswordEntry.bind("<Return>", self.setUserPassword)
+
         #Radio button
-        self.protocol = StringVar() 
+        self.protocol = StringVar(value="tcp") 
         home = ttk.Radiobutton(self.mainFrame, text='TCP', variable=self.protocol, value="tcp")
         office = ttk.Radiobutton(self.mainFrame, text='EMAIL', variable=self.protocol, value="email")
 
-        home.grid(column=0, row=2, columnspan=1)
-        office.grid(column=2, row=2, columnspan=1)
+        home.grid(column=0, row=0, columnspan=1)
+        office.grid(column=2, row=0, columnspan=1)
         
         self.protocolFormat = Label(self.mainFrame, text="Address format:")
         self.protocolFormat.grid(column=0, row=3, sticky=W)
@@ -102,7 +115,7 @@ class mainWindow:
         self.protocolExample = Label(self.mainFrame, text="")
         self.protocolExample.grid(column=1, row=3, columnspan=3, sticky=W)
 
-        self.protocol.trace_add("write", self.protocol_changed)
+        self.protocol.trace_add("write", self.protocolChanged)
         
         #Connect Button
         self.connectButton = Button(self.mainFrame, text="Connect", command=self.connectToServer)
@@ -119,7 +132,7 @@ class mainWindow:
         self.yourAddress = Label(self.mainFrame, text="")
         self.yourAddress.grid(column=1, row=5, columnspan=2, sticky=W)
         
-        self.addressEntry.bind("<Return>", self.set_address)
+        self.addressEntry.bind("<Return>", self.setAddress)
 
         #Text Label
         self.textFrame = ttk.Frame(self.mainFrame, borderwidth=5, relief="ridge", width=400, height=400)
@@ -138,28 +151,59 @@ class mainWindow:
         self.button.grid(column=3, row=8, sticky=(W, E))
 
         #Start Server Button
-        self.serverButton = Button(self.mainFrame, text="Start server on port :5000", command=self.tcp.startServer)
+        self.serverButton = Button(self.mainFrame, text="Start server on port :5000", command=self.startServer)
         self.serverButton.grid(column=0, row=6, columnspan=3, sticky=W)    
     
-    def set_userName(self, event=None):
+    def sendEmail(self, receiverEmail, messageText):
+        senderEmail = self.userName
+        senderPassword = self.userPassword
+
+        msg = EmailMessage()
+        msg['Subject'] = f"Messege from {senderEmail}"
+        msg['From'] = senderEmail
+        msg['To'] = receiverEmail
+        msg.set_content(messageText)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(senderEmail, senderPassword)
+            smtp.send_message(msg)
+
+    def setUserName(self, event=None):
+        if self.tcp.startServerInfo == True or self.tcp.isConnected:
+            messagebox.showwarning("Warning", "You can't change username when server started or when connected")
+            return
         self.userName = self.userName_entry.get().strip()
-        if self.userName:
-            self.userName_entry.destroy()
-            #Info 2 Label
-            username_label = Label(self.mainFrame, text=self.userName)
-            username_label.grid(column=0, row=1, columnspan=4, sticky=W)
-                
-            #Picked Username Label
-            setName = Label(self.mainFrame, text="Your Username:")
-            setName.grid(column=0, row=0, sticky=W)
+        if not self.userName:
+            return
+        if self.protocol.get() == "email":
+            self.setName.config(text="Your email:")
+            self.sendMessage(f"Email set: {self.userName}")
+        else:
+            self.setName.config(text="Your Username:")
+            self.sendMessage(f"Username set: {self.userName}")
+    def setUserPassword(self, event=None):
+        self.userPassword = self.userPasswordEntry.get().strip()
+        if not self.userPassword:
+            return
+        self.sendMessage(self.userPassword)
     
-    def protocol_changed(self, *args):
+    def protocolChanged(self, *args):
         if self.protocol.get() == "tcp":
-                self.protocolExample.config(text="192.168.1.x:xxxx")
+            self.protocolExample.config(text="192.168.1.x:xxxx")
+            self.setName.config(text="Insert username")
+            self.setPassword.grid_remove()
+            self.userPasswordEntry.grid_remove()
+            self.userName_entry.grid(column=0, row=2, columnspan=4, sticky=W)
+
         elif self.protocol.get() == 'email':
-                self.protocolExample.config(text="example@gmail.com")
+            self.protocolExample.config(text="example@gmail.com")
+            self.setName.config(text="Insert email")
+            self.userName_entry.grid(column=0, row=2, columnspan=2, sticky=W)
+
+            self.setPassword.grid(column=2, row=1, sticky=W)
+            self.userPasswordEntry.grid(column=2, row=2, columnspan=2, sticky=W)
     
-    def set_address(self, event=None):
+    def setAddress(self, event=None):
         addressName = self.addressEntry.get().strip()
         self.yourAddress.config(text=addressName)
             
@@ -177,23 +221,45 @@ class mainWindow:
         if not self.userName:
             messagebox.showwarning("Warning", "Set username first.")
             return
-        fullMessage = f"{self.userName}: {message}"
-        try:
-            self.tcp.sendMessage(fullMessage)
-            self.sendMessage(f"You: {message}")
-            self.textToSend.delete(0, END)
+        if self.protocol.get() == "tcp":
+            fullMessage = f"{self.userName}: {message}"
+            try:
+                self.tcp.sendMessage(fullMessage)
+                self.sendMessage(f"You: {message}")
+                self.textToSend.delete(0, END)
 
-        except Exception as e:
-            messagebox.showerror("Send error", str(e))
+            except Exception as e:
+                messagebox.showerror("Send error", str(e))
+        elif self.protocol.get() == "email":
+            receiverEmail = self.addressEntry.get().strip()
+            if not receiverEmail:
+                messagebox.showwarning("Warning", "Set reciver email first")
+                return
+            try:
+                senderEmail = self.userName
+                fullMessage = f"{senderEmail}: {message}"
+                self.sendEmail(receiverEmail, fullMessage)
+                self.sendMessage(f"You by email: {message}")
+                self.textToSend.delete(0, END)
+
+            except Exception as e:
+                messagebox.showerror("Email error", str(e))
 
     def safeDisplayMessage(self, message):
         self.root.after(0, lambda: self.sendMessage(message))
     
     def showError(self, error, message):
         messagebox.showerror(error, message)
-
+    def startServer(self):
+        if not self.userName:
+            messagebox.showerror("Warning", "Set username first.")
+            return
+        self.tcp.startServer()
     def connectToServer(self):
         address = self.addressEntry.get().strip()
+        if not self.userName:
+            messagebox.showwarning("Warning", "Set username first.")
+            return
         if ":" not in address:
             messagebox.showerror("Error", "Use format: IP:PORT")
             return
