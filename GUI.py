@@ -185,7 +185,7 @@ class mainWindow:
         self.userPassword = self.userPasswordEntry.get().strip()
         if not self.userPassword:
             return
-        self.sendMessage(self.userPassword)
+        self.sendMessage("User password set")
     
     def protocolChanged(self, *args):
         if self.protocol.get() == "tcp":
@@ -239,7 +239,7 @@ class mainWindow:
                 senderEmail = self.userName
                 fullMessage = f"{senderEmail}: {message}"
                 self.sendEmail(receiverEmail, fullMessage)
-                self.sendMessage(f"You by email: {message}")
+                self.sendMessage(f"You by email send message: {message}")
                 self.textToSend.delete(0, END)
 
             except Exception as e:
