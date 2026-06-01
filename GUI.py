@@ -1,21 +1,81 @@
+#To Do 
+# - przycisk na zamknięcie konwesrsacji 
+# - wybór email i cała implementacja email
+# - może zmienić theme jak już będę miał dużo czasu ??? fajnie by było 
+# - zrobić loggi żeby zapisywać w pliku wysyłabne wiadomości czy coś 
+
 from tkinter import *
 from tkinter import ttk, messagebox
 import socket
 import threading
 
+class tcpCommunication:
+    def __init__(self, onMessage, onShowWarning):
+        self.conn = None
+        self.sock = None
+        self.isConnected = False
+        self.onMessage = onMessage
+        self.onShowWarning = onShowWarning
+
+    def startServer(self):
+        try:    
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.bind(("0.0.0.0", 5000))
+            self.sock.listen(1)
+            self.onMessage("Server started on port 5000. Waiting for connection...")
+            thread = threading.Thread(target=self.acceptClient, daemon=True)
+            thread.start()
+
+        except OSError:
+            self.onShowWarning("Error", "Server is already running or port 5000 is busy.")
+
+    def acceptClient(self):
+        self.conn, address = self.sock.accept()
+        self.isConnected = True
+        self.onMessage(f"Connected with {address}")
+        thread = threading.Thread(target=self.reciveMessages, daemon=True)
+        thread.start()
+
+    def connectToServer(self, ip , port):
+        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.conn.connect((ip, int(port)))
+        self.isConnected = True
+        self.onMessage(f"Connected to {ip}:{port}") 
+        thread = threading.Thread(target=self.reciveMessages, daemon=True)
+        thread.start()
+    
+    def sendMessage(self, message):
+        if not self.isConnected or self.conn is None:
+            self.onShowWarning("Warning", "You are not connected.")
+            return
+        self.conn.sendall(message.encode("utf-8"))
+
+    def reciveMessage(self):
+        while True:
+            try:
+                data = self.conn.recv(1024)
+                if not data:
+                    break
+                message = data.decode("utf-8")
+                self.onMessage(message)
+            except:
+                 break
+            
+        self.isConnected = False
+        self.onMessage("Connection closed.")
+
+
+
+
 class mainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("Communication application")
-        self.conn = None
-        self.sock = None
-        self.isConnected = False
-        self.username = ""
+        self.tcp = tcpCommunication(self.safeDisplayMessage, self.showError)
+        self.userName = ""
 
-        
         self.mainFrame = ttk.Frame(root, padding=(3, 3, 6, 6))
-        self.mainFrame.grid(column=0, row=0, sticky=(N, W, E, S), columnspan=4, rowspan=8)
-        
+        self.mainFrame.grid(column=0, row=0, sticky=(N, W, E, S), columnspan=4, rowspan=8)        
 
         #Info 1 Label
         self.setName = Label(self.mainFrame, text="Insert username")
@@ -29,9 +89,12 @@ class mainWindow:
         
         #Radio button
         self.protocol = StringVar() 
-        home = ttk.Radiobutton(self.mainFrame, text='TCP', variable=self.protocol, value="tcp").grid(row=2, column=0, columnspan=1)
-        office = ttk.Radiobutton(self.mainFrame, text='EMAIL', variable=self.protocol, value="email").grid(row=2, column=2, columnspan=1)
+        home = ttk.Radiobutton(self.mainFrame, text='TCP', variable=self.protocol, value="tcp")
+        office = ttk.Radiobutton(self.mainFrame, text='EMAIL', variable=self.protocol, value="email")
 
+        home.grid(column=0, row=2, columnspan=1)
+        office.grid(column=2, row=2, columnspan=1)
+        
         self.protocolFormat = Label(self.mainFrame, text="Address format:")
         self.protocolFormat.grid(column=0, row=3, sticky=W)
         
@@ -75,12 +138,11 @@ class mainWindow:
         self.button.grid(column=3, row=8, sticky=(W, E))
 
         #Start Server Button
-        self.serverButton = Button(self.mainFrame, text="Start server on port :5000", command=self.startServer)
+        self.serverButton = Button(self.mainFrame, text="Start server on port :5000", command=self.tcp.startServer)
         self.serverButton.grid(column=0, row=6, columnspan=3, sticky=W)    
     
     def set_userName(self, event=None):
         self.userName = self.userName_entry.get().strip()
-            
         if self.userName:
             self.userName_entry.destroy()
             #Info 2 Label
@@ -109,83 +171,36 @@ class mainWindow:
 
     def addMessage(self, event=None):
         message = self.textToSend.get().strip()
-
         if not message:
-              return
-         
+            messagebox.showwarning("Warning", "You can't send nothing")
+            return
         if not self.userName:
             messagebox.showwarning("Warning", "Set username first.")
             return
-        
-        if not self.isConnected or self.conn is None:
-            messagebox.showwarning("Warning", "You are not connected.")
-            return
-        
         fullMessage = f"{self.userName}: {message}"
-
         try:
-            self.conn.sendall(fullMessage.encode("utf-8"))
+            self.tcp.sendMessage(fullMessage)
             self.sendMessage(f"You: {message}")
             self.textToSend.delete(0, END)
 
         except Exception as e:
             messagebox.showerror("Send error", str(e))
-    def reciveMessages(self):
-        while True:
-            try:
-                data = self.conn.recv(1024)
-                if not data:
-                    break
-                message = data.decode("utf-8")
-                self.root.after(0, lambda msg=message: self.sendMessage(msg))
-            except:
-                 break
-            
-        self.isConnected = False
-        self.root.after(0, lambda: self.sendMessage("Connection closed."))
 
-    def startServer(self):
-            try:    
-                self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.sock.bind(("0.0.0.0", 5000))
-                self.sock.listen(1)
-                
-                self.sendMessage("Server started on port 5000. Waiting for connection...")
-
-                thread = threading.Thread(target=self.acceptClient, daemon=True)
-                thread.start()
-
-            except OSError:
-                 messagebox.showerror("Error", "Server is already running or port 5000 is busy.")
-
-    def acceptClient(self):
-        self.conn, address = self.sock.accept()
-        self.isConnected = True
-         
-        self.root.after(0, lambda: self.sendMessage(f"Connected with {address}"))
-
-        thread = threading.Thread(target=self.reciveMessages, daemon=True)
-        thread.start()
+    def safeDisplayMessage(self, message):
+        self.root.after(0, lambda: self.sendMessage(message))
+    
+    def showError(self, error, message):
+        messagebox.showerror(error, message)
 
     def connectToServer(self):
         address = self.addressEntry.get().strip()
-
         if ":" not in address:
             messagebox.showerror("Error", "Use format: IP:PORT")
             return
-
         ip, port = address.split(":")
-
         try:
-            self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.conn.connect((ip, int(port)))
-            self.isConnected = True
-
+            self.tcp.connectToServer(ip, port)
             self.yourAddress.config(text=address)
-            self.sendMessage(f"Connected to {address}")
-
-            thread = threading.Thread(target=self.reciveMessages, daemon=True)
-            thread.start()
 
         except Exception as e:
             messagebox.showerror("Connection error", str(e))
