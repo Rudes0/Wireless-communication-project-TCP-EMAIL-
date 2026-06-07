@@ -1,35 +1,101 @@
-#To Do 
-# - przycisk na zamknięcie konwesrsacji [x]
-# - wybór email i cała implementacja email [x]
-# - może zmienić theme jak już będę miał dużo czasu ??? fajnie by było 
-# - zrobić loggi żeby zapisywać w pliku wysyłabne wiadomości czy coś [x]
-
 from tkinter import *
 from tkinter import ttk, messagebox
 import socket
 import threading
 import smtplib
+import imaplib
+import email
 from email.message import EmailMessage 
-from datetime import datetime
+from datetime import datetime, timedelta
+import time
+
 
 class emailCommunication:
-    def __init__(self):
-        pass
+    def __init__(self, onMessage, onShowWarning):
+        self.onMessage = onMessage
+        self.onShowWarning = onShowWarning
+        self.isReceiving = False
 
     def sendEmail(self, userNamem, userPassword,  receiverEmail, messageText):
         senderEmail = userNamem
         senderPassword = userPassword
-
         msg = EmailMessage()
         msg['Subject'] = f"Messege from {senderEmail}"
         msg['From'] = senderEmail
         msg['To'] = receiverEmail
         msg.set_content(messageText)
-
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(senderEmail, senderPassword)
             smtp.send_message(msg)
 
+    def startReceivingEmail(self, userName, userPassword):
+        if self.isReceiving: 
+            return
+        self.isReceiving = True
+        thread = threading.Thread(target=self.receiveEmailLoop, args=(userName, userPassword), daemon=True)
+        thread.start()
+
+    def receiveEmailLoop(self, userName, userPassword):
+        while self.isReceiving:
+            try: 
+                self.checkUnreadEmail(userName, userPassword)
+
+            except Exception as e:
+                self.isReceiving = False
+                if self.onShowWarning:
+                    self.onShowWarning("Email recive error", str(e))
+                break
+            time.sleep(10)
+
+    def checkUnreadEmail(self, userName, userPassword):
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(userName, userPassword)
+        mail.select("inbox")
+
+        dayAgo = (datetime.now() - timedelta(minutes=60)).strftime("%d-%b-%Y")
+        result, data = mail.search(None, "UNSEEN", "SINCE", dayAgo)
+
+        if result != "OK":
+            mail.logout()
+            return
+        for num in data[0].split():
+            result, msg_data = mail.fetch(num, "(RFC822)")
+            if result != "OK":
+                continue
+            msg = email.message_from_bytes(msg_data[0][1])
+
+            sender = msg["From"]
+            subject  =msg["Subject"]
+
+            body = ""
+
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain":
+                        payload = part.get_payload(decode=True)
+
+                        if payload:
+                            body = payload.decode(errors="ignore")
+
+                        break
+            else:
+                payload = msg.get_payload(decode=True)
+
+                if payload:
+                    body = payload.decode(errors="ignore")
+
+            if self.onMessage:
+                self.onMessage(
+                    f"EMAIL from {sender}\n"
+                    f"Subject: {subject}\n"
+                    f"{body}"
+                )
+
+        mail.logout()
+
+
+    def stopReceivingEmail(self):
+        self.isReceiving = False
 
 class tcpCommunication:
     def __init__(self, onMessage, onShowWarning):
@@ -87,7 +153,7 @@ class tcpCommunication:
             except:
                  break
         self.startServerInfo = False            
-        self.isConnected = False
+        self.isConnected = False 
         
     def disconnectFromServer(self):
         try:
@@ -110,12 +176,12 @@ class mainWindow:
         self.root = root
         self.root.title("Communication application")
         self.tcp = tcpCommunication(self.safeDisplayMessage, self.showError)
-        self.email = emailCommunication()
+        self.email = emailCommunication(self.safeDisplayMessage, self.showError)
         self.userName = ""
         self.userPassword = ""
         self.mainFrame = ttk.Frame(root, padding=(3, 3, 6, 6))
         self.mainFrame.grid(column=0, row=0, sticky=(N, W, E, S), columnspan=4, rowspan=8)        
-
+        
         #Info 1 Label
         self.setName = Label(self.mainFrame, text="Insert username")
         self.setName.grid(column=0, row=1, sticky=W)
@@ -125,7 +191,7 @@ class mainWindow:
         self.userName_entry.grid(column=0, row=2, columnspan=4, sticky=W)
 
         self.userName_entry.bind("<Return>", self.setUserName)
-        
+
         #Password Label and entry
         self.setPassword = Label(self.mainFrame, text="Password:")
         self.userPasswordEntry = Entry(self.mainFrame, show="*")
@@ -133,7 +199,7 @@ class mainWindow:
         self.userPasswordEntry.bind("<Return>", self.setUserPassword)
 
         #Radio button
-        self.protocol = StringVar(value="tcp") 
+        self.protocol = StringVar() 
         home = ttk.Radiobutton(self.mainFrame, text='TCP', variable=self.protocol, value="tcp")
         office = ttk.Radiobutton(self.mainFrame, text='EMAIL', variable=self.protocol, value="email")
 
@@ -199,6 +265,7 @@ class mainWindow:
         if self.protocol.get() == "email":
             self.setName.config(text="Your email:")
             self.sendMessage(f"Email set: {self.userName}")
+            self.tryStartReceivingEmail()
         else:
             self.setName.config(text="Your Username:")
             self.sendMessage(f"Username set: {self.userName}")
@@ -208,6 +275,7 @@ class mainWindow:
         if not self.userPassword:
             return
         self.sendMessage("User password set")
+        self.tryStartReceivingEmail()
     
     def protocolChanged(self, *args):
         if self.protocol.get() == "tcp":
@@ -216,15 +284,16 @@ class mainWindow:
             self.setPassword.grid_remove()
             self.userPasswordEntry.grid_remove()
             self.userName_entry.grid(column=0, row=2, columnspan=4, sticky=W)
+            self.email.stopReceivingEmail()
 
         elif self.protocol.get() == 'email':
             self.protocolExample.config(text="example@gmail.com")
             self.setName.config(text="Insert email")
             self.userName_entry.grid(column=0, row=2, columnspan=2, sticky=W)
-
             self.setPassword.grid(column=2, row=1, sticky=W)
             self.userPasswordEntry.grid(column=2, row=2, columnspan=2, sticky=W)
-    
+            self.tryStartReceivingEmail()
+
     def setAddress(self, event=None):
         addressName = self.addressEntry.get().strip()
         self.yourAddress.config(text=addressName)
@@ -297,6 +366,7 @@ class mainWindow:
 
         except Exception as e:
             messagebox.showerror("Connection error", str(e))
+
     def disconnectFromServer(self):
         self.tcp.disconnectFromServer()
 
@@ -305,6 +375,15 @@ class mainWindow:
         with open("message_log.txt", "a", encoding="utf-8") as file:
             file.write(f"[{timeNow}] [{protocol}] [{message}]\n")
 
+    def tryStartReceivingEmail(self):
+        if self.protocol.get() != "email":
+            return
+        if not self.userName:
+            return
+        if not self.userPassword:
+            return
+        self.email.startReceivingEmail(self.userName, self.userPassword)
+        
     
 def main_fun():
     root = Tk()
