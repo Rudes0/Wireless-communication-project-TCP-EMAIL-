@@ -1,175 +1,10 @@
 from tkinter import *
 from tkinter import ttk, messagebox
-import socket
-import threading
-import smtplib
-import imaplib
-import email
-from email.message import EmailMessage 
-from datetime import datetime, timedelta
-import time
 
+from datetime import datetime
+from emailCommunicationClass import emailCommunication
+from tcpCommunicationClass import tcpCommunication
 
-class emailCommunication:
-    def __init__(self, onMessage, onShowWarning):
-        self.onMessage = onMessage
-        self.onShowWarning = onShowWarning
-        self.isReceiving = False
-
-    def sendEmail(self, userNamem, userPassword,  receiverEmail, messageText):
-        senderEmail = userNamem
-        senderPassword = userPassword
-        msg = EmailMessage()
-        msg['Subject'] = f"Messege from {senderEmail}"
-        msg['From'] = senderEmail
-        msg['To'] = receiverEmail
-        msg.set_content(messageText)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(senderEmail, senderPassword)
-            smtp.send_message(msg)
-
-    def startReceivingEmail(self, userName, userPassword):
-        if self.isReceiving: 
-            return
-        self.isReceiving = True
-        thread = threading.Thread(target=self.receiveEmailLoop, args=(userName, userPassword), daemon=True)
-        thread.start()
-
-    def receiveEmailLoop(self, userName, userPassword):
-        while self.isReceiving:
-            try: 
-                self.checkUnreadEmail(userName, userPassword)
-
-            except Exception as e:
-                self.isReceiving = False
-                if self.onShowWarning:
-                    self.onShowWarning("Email recive error", str(e))
-                break
-            time.sleep(10)
-
-    def checkUnreadEmail(self, userName, userPassword):
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login(userName, userPassword)
-        mail.select("inbox")
-
-        dayAgo = (datetime.now() - timedelta(minutes=60)).strftime("%d-%b-%Y")
-        result, data = mail.search(None, "UNSEEN", "SINCE", dayAgo)
-
-        if result != "OK":
-            mail.logout()
-            return
-        for num in data[0].split():
-            result, msg_data = mail.fetch(num, "(RFC822)")
-            if result != "OK":
-                continue
-            msg = email.message_from_bytes(msg_data[0][1])
-
-            sender = msg["From"]
-            subject  =msg["Subject"]
-
-            body = ""
-
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        payload = part.get_payload(decode=True)
-
-                        if payload:
-                            body = payload.decode(errors="ignore")
-
-                        break
-            else:
-                payload = msg.get_payload(decode=True)
-
-                if payload:
-                    body = payload.decode(errors="ignore")
-
-            if self.onMessage:
-                self.onMessage(
-                    f"EMAIL from {sender}\n"
-                    f"Subject: {subject}\n"
-                    f"{body}"
-                )
-
-        mail.logout()
-
-
-    def stopReceivingEmail(self):
-        self.isReceiving = False
-
-class tcpCommunication:
-    def __init__(self, onMessage, onShowWarning):
-        self.conn = None
-        self.sock = None
-        self.isConnected = False
-        self.onMessage = onMessage
-        self.onShowWarning = onShowWarning
-        self.startServerInfo = False
-    def startServer(self):
-        try:    
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.bind(("0.0.0.0", 5000))
-            self.sock.listen(1)
-            self.onMessage("Server started on port 5000. Waiting for connection...")
-            thread = threading.Thread(target=self.acceptClient, daemon=True)
-            thread.start()
-            self.startServerInfo = True
-        except OSError:
-            self.onShowWarning("Error", "Server is already running or port 5000 is busy.")
-
-    def acceptClient(self):
-        try: 
-            self.conn, address = self.sock.accept()
-        except OSError:
-            self.startServerInfo = False
-            return
-        self.isConnected = True
-        self.onMessage(f"Connected with {address}")
-        thread = threading.Thread(target=self.reciveMessage, daemon=True)
-        thread.start()
-
-    def connectToServer(self, ip , port):
-        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.conn.connect((ip, int(port)))
-        self.isConnected = True
-        self.onMessage(f"Connected to {ip}:{port}") 
-        thread = threading.Thread(target=self.reciveMessage, daemon=True)
-        thread.start()
-    
-    def sendMessage(self, message):
-        if not self.isConnected or self.conn is None:
-            self.onShowWarning("Warning", "You are not connected.")
-            return
-        self.conn.sendall(message.encode("utf-8"))
-
-    def reciveMessage(self):
-        while True:
-            try:
-                data = self.conn.recv(1024)
-                if not data:
-                    break
-                message = data.decode("utf-8")
-                self.onMessage(message)
-            except:
-                 break
-        self.startServerInfo = False            
-        self.isConnected = False 
-        
-    def disconnectFromServer(self):
-        try:
-            if self.conn:
-                self.conn.close()
-                self.conn = None
-            if self.sock:
-                self.sock.close()
-                self.sock = None
-            self.isConnected = False
-            self.startServerInfo = False
-
-            self.onMessage("Disconnected")
-
-        except Exception as e:
-            self.onShowWarning("Disconnect error", str(e))
 
 class mainWindow:
     def __init__(self, root):
@@ -297,6 +132,7 @@ class mainWindow:
     def setAddress(self, event=None):
         addressName = self.addressEntry.get().strip()
         self.yourAddress.config(text=addressName)
+        self.tryStartReceivingEmail()
             
     def sendMessage(self, message):
         self.chatBox.config(state=NORMAL)
@@ -376,14 +212,17 @@ class mainWindow:
             file.write(f"[{timeNow}] [{protocol}] [{message}]\n")
 
     def tryStartReceivingEmail(self):
+        receiverEmail = self.addressEntry.get().strip()
         if self.protocol.get() != "email":
             return
         if not self.userName:
             return
-        if not self.userPassword:
+        if not self.userPassword: 
             return
-        self.email.startReceivingEmail(self.userName, self.userPassword)
+        if not receiverEmail:
+            return
         
+        self.email.startReceivingEmail(self.userName, self.userPassword, receiverEmail)
     
 def main_fun():
     root = Tk()
