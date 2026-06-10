@@ -2,12 +2,12 @@ import threading
 import socket 
 
 class tcpCommunication:
-    def __init__(self, onMessage, onShowWarning):
+    def __init__(self, onMessage, onShowError):
         self.conn = None
         self.sock = None
         self.isConnected = False
         self.onMessage = onMessage
-        self.onShowWarning = onShowWarning
+        self.onShowError = onShowError
         self.startServerInfo = False
     def startServer(self):
         try:    
@@ -19,7 +19,7 @@ class tcpCommunication:
             thread.start()
             self.startServerInfo = True
         except OSError:
-            self.onShowWarning("Error", "Server is already running or port 5000 is busy.")
+            self.onShowError("Error", "Server is already running or port 5000 is busy.")
 
     def acceptClient(self):
         try: 
@@ -33,7 +33,9 @@ class tcpCommunication:
         thread.start()
 
     def connectToServer(self, ip , port):
+        
         self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socket.socket.settimeout(self.conn, 5)
         self.conn.connect((ip, int(port)))
         self.isConnected = True
         self.onMessage(f"Connected to {ip}:{port}") 
@@ -42,7 +44,7 @@ class tcpCommunication:
     
     def sendMessage(self, message):
         if not self.isConnected or self.conn is None:
-            self.onShowWarning("Warning", "You are not connected.")
+            self.onShowError("Error", "You are not connected.")
             return
         self.conn.sendall(message.encode("utf-8"))
 
@@ -73,4 +75,4 @@ class tcpCommunication:
             self.onMessage("Disconnected")
 
         except Exception as e:
-            self.onShowWarning("Disconnect error", str(e))
+            self.onShowError("Disconnect error", str(e))

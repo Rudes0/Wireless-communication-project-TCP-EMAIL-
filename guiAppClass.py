@@ -167,10 +167,11 @@ class guiApp:
             try:
                 senderEmail = self.userName
                 fullMessage = f"{senderEmail}: {message}"
-                self.email.sendEmail(self.userName, self.userPassword, receiverEmail, message)
-                self.sendMessage(f"You sent message: {message}")
-                self.saveToLog("EMAIL", fullMessage)
-                self.textToSend.delete(0, END)
+                ok = self.email.sendEmail(self.userName, self.userPassword, receiverEmail, message)
+                if ok:
+                    self.sendMessage(f"You sent message: {message}")
+                    self.saveToLog("EMAIL", fullMessage)
+                    self.textToSend.delete(0, END)
 
             except Exception as e:
                 messagebox.showerror("Email error", str(e))

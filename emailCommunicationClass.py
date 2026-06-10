@@ -7,9 +7,9 @@ from email.message import EmailMessage
 from datetime import datetime, timedelta
 
 class emailCommunication:
-    def __init__(self, onMessage, onShowWarning):
+    def __init__(self, onMessage, onShowError):
         self.onMessage = onMessage
-        self.onShowWarning = onShowWarning
+        self.onShowError = onShowError
         self.isReceiving = False
 
     def sendEmail(self, userNamem, userPassword,  receiverEmail, messageText):
@@ -20,9 +20,14 @@ class emailCommunication:
         msg['From'] = senderEmail
         msg['To'] = receiverEmail
         msg.set_content(messageText)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(senderEmail, senderPassword)
-            smtp.send_message(msg)
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+                smtp.login(senderEmail, senderPassword)
+                smtp.send_message(msg)
+                return 1
+        except smtplib.SMTPResponseException as e:
+            self.onShowError("Error", str(e))
+            return 0
 
     def startReceivingEmail(self, userName, userPassword, receiverEmail):
         if self.isReceiving: 
@@ -38,8 +43,8 @@ class emailCommunication:
 
             except Exception as e:
                 self.isReceiving = False
-                if self.onShowWarning:
-                    self.onShowWarning("Email recive error", str(e))
+                if self.onShowError:
+                    self.onShowError("Email recive error", str(e))
                 break
             time.sleep(10)
 
